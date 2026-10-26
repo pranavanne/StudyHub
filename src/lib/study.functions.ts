@@ -165,15 +165,28 @@ export const sendMessage = createServerFn({ method: "POST" })
       try {
         const { embedTexts } = await import("./embeddings.server");
         const [queryVector] = await embedTexts([content]);
-        const { data: matches } = await supabase.rpc("match_session_chunks", {
+        const { data: matches, error: matchError } = await supabase.rpc("match_session_chunks", {
           query_embedding: JSON.stringify(queryVector),
           doc_ids: docs.map((d) => d.id),
           match_count: 6,
         });
-        passages = (matches ?? [])
-          .map((m: { content: string }) => m.content)
-          .join("\n---\n")
-          .slice(0, 12000);
+        if (matchError) console.error("Passage search failed", matchError.message);
+        let found = (matches ?? []).map((m: { content: string }) => m.content);
+        if (found.length === 0) {
+          // Vague questions ("what is in this file?") may match nothing; use the opening text.
+          const { data: opening } = await supabase
+            .from("document_chunks")
+            .select("content")
+            .in(
+              "document_id",
+              docs.map((d) => d.id),
+            )
+            .lte("chunk_index", 3)
+            .order("chunk_index", { ascending: true })
+            .limit(8);
+          found = (opening ?? []).map((c) => c.content);
+        }
+        passages = found.join("\n---\n").slice(0, 12000);
       } catch (error) {
         console.error("Retrieval failed", error);
       }

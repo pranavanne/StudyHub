@@ -291,8 +291,16 @@ function Dashboard() {
           const document = await addDocument({
             data: { filename: file.name, filePath: path, subject: "General", sessionId: chatId },
           });
-          await runIndexing({ data: { documentId: document.id } });
+          const result = await runIndexing({ data: { documentId: document.id } });
           await queryClient.invalidateQueries({ queryKey: ["documents"] });
+          if (result.chunks === 0) {
+            setUploadState((current) => ({
+              ...current,
+              [id]: { name: file.name, status: "error" },
+            }));
+            toast.error(result.note ?? "No readable text found in this file.");
+            return;
+          }
           setUploadState((current) => ({ ...current, [id]: { name: file.name, status: "ready" } }));
           toast.success(`${file.name} is ready to study.`);
         } catch (error) {
